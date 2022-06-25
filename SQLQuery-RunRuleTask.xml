@@ -1,0 +1,185 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<!DOCTYPE TaskDefinition PUBLIC "sailpoint.dtd" "sailpoint.dtd">
+<TaskDefinition name="Tawazun MySQL Database Users Report" resultAction="Delete" subType="task_item_type_generic" type="Generic">
+  <Attributes>
+    <Map>
+      <entry key="TaskDefinition.runLengthAverage" value="7"/>
+      <entry key="TaskDefinition.runLengthTotal" value="31"/>
+      <entry key="TaskDefinition.runs" value="4"/>
+      <entry key="TaskSchedule.host"/>
+      <entry key="ruleName" value="Tawazun MySQL Database Users Rule"/>
+      <entry key="taskCompletionEmailNotify" value="Disabled"/>
+      <entry key="taskCompletionEmailRecipients"/>
+      <entry key="taskCompletionEmailTemplate"/>
+    </Map>
+  </Attributes>
+  <Description>A task that can be used to run an arbitrary rule.</Description>
+  <Owner>
+    <Reference class="sailpoint.object.Identity" name="spadmin"/>
+  </Owner>
+  <Parent>
+    <Reference class="sailpoint.object.TaskDefinition" name="Run Rule"/>
+  </Parent>
+</TaskDefinition>
+
+
+
+
+
+<?xml version='1.0' encoding='UTF-8'?>
+<!DOCTYPE Rule PUBLIC "sailpoint.dtd" "sailpoint.dtd">
+<Rule language="beanshell" name="Tawazun MySQL Database Users Rule">
+  <Source>
+  import java.sql.*;
+  import java.nio.charset.StandardCharsets;
+  import java.text.SimpleDateFormat;     
+  import sailpoint.tools.GeneralException;  
+  import sailpoint.api.*;                                 
+  import sailpoint.object.*;
+  import sailpoint.tools.*; 
+  import sailpoint.tools.xml.*;
+  import sailpoint.object.EmailFileAttachment;
+  import sailpoint.object.EmailFileAttachment.MimeType;
+  Statement stmt = null;
+  ResultSetMetaData metaData = null;
+  String clNames = "";
+  String header = "";
+  String emailTemplate ="Tawazun SQL Database Users Report Notification";  
+  //Fetching and sending Database report
+  public void sendSQLDBUsers()  throws Exception {
+    log.info("Send Report Started");
+    Map attr = new HashMap();
+    attr.put("reportType","MySQLDBUsers");
+    Connection connection = dbConnection();        
+    //    log.info("Connection Status in sendReport: "+connection);    
+    String query = "SELECT
+  mu.host `Host`,
+  mu.user `User`,
+  REPLACE(RTRIM(CONCAT(
+  IF(mu.Select_priv = 'Y', 'Select ', ''),
+  IF(mu.Insert_priv = 'Y', 'Insert ', ''),
+  IF(mu.Update_priv = 'Y', 'Update ', ''),
+  IF(mu.Delete_priv = 'Y', 'Delete ', ''),
+  IF(mu.Create_priv = 'Y', 'Create ', ''),
+  IF(mu.Drop_priv = 'Y', 'Drop ', ''),
+  IF(mu.Reload_priv = 'Y', 'Reload ', ''),
+  IF(mu.Shutdown_priv = 'Y', 'Shutdown ', ''),
+  IF(mu.Process_priv = 'Y', 'Process ', ''),
+  IF(mu.File_priv = 'Y', 'File ', ''),
+  IF(mu.Grant_priv = 'Y', 'Grant ', ''),
+  IF(mu.References_priv = 'Y', 'References ', ''),
+  IF(mu.Index_priv = 'Y', 'Index ', ''),
+  IF(mu.Alter_priv = 'Y', 'Alter ', ''),
+  IF(mu.Show_db_priv = 'Y', 'Show_db ', ''),
+  IF(mu.Super_priv = 'Y', 'Super ', ''),
+  IF(mu.Create_tmp_table_priv = 'Y', 'Create_tmp_table ', ''),
+  IF(mu.Lock_tables_priv = 'Y', 'Lock_tables ', ''),
+  IF(mu.Execute_priv = 'Y', 'Execute ', ''),
+  IF(mu.Repl_slave_priv = 'Y', 'Repl_slave ', ''),
+  IF(mu.Repl_client_priv = 'Y', 'Repl_client ', ''),
+  IF(mu.Create_view_priv = 'Y', 'Create_view ', ''),
+  IF(mu.Show_view_priv = 'Y', 'Show_view ', ''),
+  IF(mu.Create_routine_priv = 'Y', 'Create_routine ', ''),
+  IF(mu.Alter_routine_priv = 'Y', 'Alter_routine ', ''),
+  IF(mu.Create_user_priv = 'Y', 'Create_user ', ''),
+  IF(mu.Event_priv = 'Y', 'Event ', ''),
+  IF(mu.Trigger_priv = 'Y', 'Trigger ', '')
+  )), ' ', ', ') AS `Privileges`
+ FROM
+  mysql.user mu
+ ORDER BY
+  mu.Host,
+  mu.User";        
+    SimpleDateFormat sdf = new SimpleDateFormat("dd-MMM-yyyy");
+    Date currentDate = new Date();
+    //   String fileName = "Tawazun SQL Database Report - "+sdf.format(currentDate)+".csv";
+    String fileName = "Tawazun SQL Database User Report - "+sdf.format(currentDate)+".csv";
+    log.error("Report Name : "+fileName);
+    if(connection!=null){
+      try {        
+        stmt = connection.createStatement();
+        ResultSet rs = stmt.executeQuery(query);
+        metaData = rs.getMetaData();
+        int colCount = metaData.getColumnCount();        
+        for ( int i = 1; i&lt;=colCount; i++){      
+          header = header + metaData.getColumnName(i)+",";
+          //          log.info("Headers - "+header);
+        }
+        header = header.substring(0, header.length()-1 );
+        clNames = header+"\n";    
+        // Extract data from result set
+        while (rs.next()) {
+          // Retrieve by column name
+          String row = "";
+          for ( String col : header.split(",")){
+            row = row + rs.getString(col)+",";
+          }
+          row = row.substring(0, row.length()-1 );
+          clNames = clNames +  row+"\n";      
+        }        
+        List emailRecipients = new ArrayList();  
+        emailRecipients=getEmailAddress("Access Control Unit");
+        if (emailRecipients!=null) {
+          byte[] reportDataBytes = clNames.getBytes(StandardCharsets.UTF_8);
+          EmailOptions ops = new EmailOptions(emailRecipients, attr);
+          EmailFileAttachment fileAttachment = new EmailFileAttachment(fileName, EmailFileAttachment.MimeType.MIME_CSV, reportDataBytes);
+          ops.addAttachment(fileAttachment);
+          EmailTemplate empTempObj = context.getObjectByName(EmailTemplate.class, emailTemplate);
+          if (empTempObj != null) {            
+            context.sendEmailNotification(empTempObj, ops);
+            log.error("Email is triggered successfully!!!");            
+          }
+        }
+      } catch (Exception e) {
+        log.info("Exception - "+e.printStackTrace());
+      }
+      finally{
+        connection.close();   
+      }
+    }    
+  }
+ 
+  //Tawazun DB Connection establishment
+  public Connection dbConnection() throws Exception {
+    log.info("DB Connection Started");
+    Connection connection = null;        
+    Application app = context.getObjectByName(Application.class, "MySQL");
+    if(app!=null){
+      try {        
+        Class.forName(app.getAttributeValue("driverClass"));
+        connection = DriverManager.getConnection(app.getAttributeValue("url"),app.getAttributeValue("user"),context.decrypt(app.getAttributeValue("password")));                      
+        log.info("Connection Status: "+connection);        
+      }
+      catch (Exception e) {        
+        log.error("Connection Failure:::: " + e.getMessage());        
+      }
+      return connection;
+    }
+    else{
+      log.info("Application Not Found");  
+    }
+  }
+  //Getting emails from Workgroup members
+  private static List getEmailAddress(String wrkGrpName)
+  {
+    Identity identity = (Identity) context.getObjectByName(Identity.class, wrkGrpName);
+    log.info("WorkGroup Name : "+identity.getName());
+    if (identity != null) 
+    {
+      List addresses = ObjectUtil.getEffectiveEmails(context, identity);      
+      if (!sailpoint.tools.Util.isEmpty(addresses)) 
+      {        
+        log.info("Email Addresses: "+addresses);
+        return(addresses);
+      }
+      else
+      {
+        log.info("Missing Email Address for Email Recipient: " + wrkGrpName );
+      }
+    }
+    return (null);
+  }
+
+  sendAllowedUsersReport();
+  </Source>
+</Rule>
